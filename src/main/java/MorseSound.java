@@ -1,3 +1,3 @@
-public enum MorseNotation {
+public enum MorseSound {
     DIH, DAH, SPACE, SKIP, DONE
 }

@@ -1,15 +1,75 @@
 import java.util.*;
+import java.util.stream.*;
 
 public class Decoder {
 
-    private static String dih = "";
-    private static String dah = "";
-    private static String altDih = "";
-    private static String altDah = "";
-    private static String spacer = "";
-    private static String altSpacer = "";
+    private String dih;
+    private String dah;
+    private String altDih;
+    private String altDah;
+    private String spacer;
+    private String altSpacer;
+    private static final Decoder decoder;
 
-    public static Integer howManyOfThese(String encoded, int position) {
+    private Decoder() { reset(); }
+
+    private void reset() {
+        this.dih = "";
+        this.dah = "";
+        this.altDih = "";
+        this.altDah = "";
+        this.spacer = "";
+        this.altSpacer = "";
+    }
+
+    public static String decode (String encoded) {
+        decoder.reset();
+        encoded = decoder.getNewEncoding(encoded);
+        Set<String> magicStrings = decoder.magicSubstrings(encoded);
+        decoder.setDihs(magicStrings);
+        decoder.setOtherVals();
+        ArrayList<MorseCharacter> phrase = new ArrayList<>();
+        ArrayList<MorseSound> ticks = new ArrayList<>();
+        boolean flip = false;
+        for (int i = 0; i < encoded.length();) {
+            int charOccurences = decoder.countOccurencesUntilNewChar(encoded, i);
+            MorseSound nextSound = decoder.getNote(charOccurences, encoded.charAt(i), flip);
+
+            // Dih or Dah
+            if (nextSound.equals(MorseSound.DIH) || nextSound.equals(MorseSound.DAH)) { ticks.add(nextSound); }
+
+            // Space or Unidentified
+            else if (nextSound.equals(MorseSound.SPACE)) {
+                Optional<MorseCharacter> finalChar = MorseCharactersArchive.getInstance().getCharacter(ticks);
+                finalChar.ifPresent(phrase::add);
+                if (phrase.size() > 0) { phrase.add(new MorseCharacter()); }
+                ticks.clear();
+            }
+
+            // End of Character
+            else if (nextSound.equals(MorseSound.DONE)) {
+                Optional<MorseCharacter> toAdd = MorseCharactersArchive.getInstance().getCharacter(ticks);
+                if (toAdd.isPresent()) {
+                    phrase.add(toAdd.get());
+                    ticks.clear();
+                } else if (!flip) {
+                    flip = true;
+                    i = 0;
+                    ticks.clear();
+                    phrase.clear();
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            i += charOccurences;
+        }
+        Optional<MorseCharacter> finalChar = MorseCharactersArchive.getInstance().getCharacter(ticks);
+        finalChar.ifPresent(phrase::add);
+        return new MorsePhrase(phrase).getOutput().trim();
+    }
+
+    private Integer countOccurencesUntilNewChar(String encoded, int position) {
         char indicated = encoded.charAt(position);
         int output = 0;
         for (int i = position; i < encoded.length(); i++) {
@@ -19,26 +79,26 @@ public class Decoder {
         return output;
     }
 
-    public static MorseNotation getNote(int amt, char c, boolean flip) {
+    private MorseSound getNote(int amtInSequence, char seq, boolean flip) {
         StringBuilder note = new StringBuilder();
-        for (int i = 0; i < amt; i++) { note.append(c); }
+        for (int i = 0; i < amtInSequence; i++) { note.append(seq); }
         if (!flip) {
-            if (note.toString().equals(dih)) { return MorseNotation.DIH; }
-            else if (note.toString().equals(dah)) { return MorseNotation.DAH; }
-            else if (note.toString().equals(altDih)) { return MorseNotation.SKIP; }
-            else if (note.toString().equals(altDah)) { return MorseNotation.DONE; }
-            else if (note.toString().equals(spacer) || note.toString().equals(altSpacer)) { return MorseNotation.SPACE; }
+            if (note.toString().equals(dih)) { return MorseSound.DIH; }
+            else if (note.toString().equals(dah)) { return MorseSound.DAH; }
+            else if (note.toString().equals(altDih)) { return MorseSound.SKIP; }
+            else if (note.toString().equals(altDah)) { return MorseSound.DONE; }
+            else if (note.toString().equals(spacer) || note.toString().equals(altSpacer)) { return MorseSound.SPACE; }
         } else {
-            if (note.toString().equals(altDih)) { return MorseNotation.DIH; }
-            else if (note.toString().equals(altDah)) { return MorseNotation.DAH; }
-            else if (note.toString().equals(dah)) { return MorseNotation.DONE; }
-            else if (note.toString().equals(dih)) { return MorseNotation.SKIP; }
-            else if (note.toString().equals(spacer) || note.toString().equals(altSpacer)) { return MorseNotation.SPACE; }
+            if (note.toString().equals(altDih)) { return MorseSound.DIH; }
+            else if (note.toString().equals(altDah)) { return MorseSound.DAH; }
+            else if (note.toString().equals(dah)) { return MorseSound.DONE; }
+            else if (note.toString().equals(dih)) { return MorseSound.SKIP; }
+            else if (note.toString().equals(spacer) || note.toString().equals(altSpacer)) { return MorseSound.SPACE; }
         }
-        return MorseNotation.SPACE;
+        return MorseSound.SPACE;
     }
 
-    public static Set<String> getMagics(String encoded) {
+    private Set<String> magicSubstrings(String encoded) {
         Set<String> magicStrings = new HashSet<>();
         char current = encoded.charAt(0);
         String curr = "" + current;
@@ -56,18 +116,12 @@ public class Decoder {
         return magicStrings;
     }
 
-    public static Integer getShortestLength(Collection<String> strings) {
-        int lengthOfShortest = -1;
-        for (String s : strings) {
-            if (lengthOfShortest == -1) { lengthOfShortest = s.length(); }
-            else if (s.length() < lengthOfShortest) { lengthOfShortest = s.length(); }
-        }
-        return lengthOfShortest;
+    private Integer shortestOf(Collection<String> strings) {
+        return strings.stream().min(Comparator.comparing(String::length)).get().length();
     }
 
-    public static void setDihs(Collection<String> strings, int lengthOfShortest) {
-        dih = "";
-        dah = "";
+    private void setDihs(Collection<String> strings) {
+        int lengthOfShortest = shortestOf(strings);
         for (String s : strings) {
             if (s.length() == lengthOfShortest) {
                 if (!dih.equals("") && !s.equals(dih)) { altDih = s;  break; }
@@ -76,42 +130,34 @@ public class Decoder {
         }
     }
 
-    public static void setOtherVals() {
-        dah = "";
-        altDah = "";
-        spacer = "";
-        altSpacer = "";
+    private void setOtherVals() {
         for (int i = 0; i < 3; i++) { dah += dih; }
         for (int i = 0; i < 3; i++) { altDah += altDih; }
         for (int i = 0; i < 7; i++) { spacer += dih; }
         for (int i = 0; i < 7; i++) { altSpacer += altDih; }
     }
 
-    public static String recode(String encoded, TreeMap<Character, Integer> freq) {
+    private String recode(String encoded, TreeMap<Character, Integer> freq) {
         if (freq.keySet().size() > 2) {
-            ArrayList<Character> goodGuys = new ArrayList<>();
-            for (Map.Entry<Character, Integer> entry: freq.entrySet()) {
-                if (goodGuys.size() < 2) { goodGuys.add(entry.getKey()); }
-                else { break; }
-            }
-            String newEncoded = "";
+            List<Character> actualEncodingChars = freq.keySet().stream().limit(2).collect(Collectors.toList());
+            StringBuilder newEncoded = new StringBuilder();
             for (int i = 0; i < encoded.length(); i++) {
-                if (goodGuys.contains(encoded.charAt(i))) { newEncoded += encoded.charAt(i); }
+                if (actualEncodingChars.contains(encoded.charAt(i))) { newEncoded.append(encoded.charAt(i)); }
                 else {
                     for (int j = i+1; j < encoded.length(); j++) {
-                        if (goodGuys.contains(encoded.charAt(j))) {
-                            newEncoded += encoded.charAt(j);
+                        if (actualEncodingChars.contains(encoded.charAt(j))) {
+                            newEncoded.append(encoded.charAt(j));
                             break;
                         }
                     }
                 }
             }
-           return newEncoded;
+           return newEncoded.toString();
         }
         return encoded;
     }
 
-    public static String getNewEncoding(String encoding) {
+    private String getNewEncoding(String encoding) {
         TreeMap<Character, Integer> freq = new TreeMap<>();
         for (char c : encoding.toCharArray()) {
             if (!Character.isAlphabetic(c) && !Character.isDigit(c)) { throw new IllegalArgumentException(); }
@@ -120,49 +166,6 @@ public class Decoder {
         return recode(encoding, freq);
     }
 
-    public static String decode (String encoded) {
-        encoded = getNewEncoding(encoded);
-        Set<String> magicStrings = getMagics(encoded);
-        Integer lengthOfShortest = getShortestLength(magicStrings);
-        setDihs(magicStrings, lengthOfShortest);
-        setOtherVals();
-        ArrayList<MorseCharacter> phrase = new ArrayList<>();
-        ArrayList<MorseNotation> ticks = new ArrayList<>();
-        boolean flip = false;
-        int iter = 0;
-        while (iter < encoded.length()) {
-            int hm = howManyOfThese(encoded, iter);
-            MorseNotation nextNote = getNote(hm, encoded.charAt(iter), flip);
-            if (nextNote == null) { throw new RuntimeException("nextNote came up null..."); }
-            if (nextNote.equals(MorseNotation.DIH) || nextNote.equals(MorseNotation.DAH)) {
-                ticks.add(nextNote);
-            } else if (nextNote.equals(MorseNotation.DONE)) {
-                Optional<MorseCharacter> toAdd = MorseCharactersArchive.getInstance().getCharacter(ticks);
-                if (toAdd.isPresent()) {
-                    phrase.add(toAdd.get());
-                    ticks.clear();
-                } else if (!flip) {
-                    flip = true;
-                    iter = 0;
-                    ticks.clear();
-                    phrase.clear();
-                    continue;
-                } else {
-                    break;
-                }
-            } else if (nextNote.equals(MorseNotation.SPACE)) {
-                Optional<MorseCharacter> finalChar = MorseCharactersArchive.getInstance().getCharacter(ticks);
-                finalChar.ifPresent(phrase::add);
-                if (phrase.size() > 0) { phrase.add(new MorseCharacter()); }
-                ticks.clear();
-            }
-            iter += hm;
-        }
-        Optional<MorseCharacter> finalChar = MorseCharactersArchive.getInstance().getCharacter(ticks);
-        finalChar.ifPresent(phrase::add);
-        return new MorsePhrase(phrase).getOutput().trim();
-    }
-
-
+    static { try { decoder = new Decoder(); } catch(Exception ex) { throw new RuntimeException("Failed to initialize Decoder!"); }}
 
 }

@@ -2,10 +2,10 @@ import java.util.*;
 
 public class MorseCharacter {
 
-    private final ArrayList<MorseNotation> ticks;
+    private final ArrayList<MorseSound> ticks;
     private final Character output;
 
-    public MorseCharacter(ArrayList<MorseNotation> ticks, Character out) {
+    public MorseCharacter(ArrayList<MorseSound> ticks, Character out) {
         this.ticks = ticks;
         this.output = out;
     }
@@ -17,7 +17,7 @@ public class MorseCharacter {
 
     public Character getOutput() { return output; }
 
-    public ArrayList<MorseNotation> getTicks() { return this.ticks; }
+    public ArrayList<MorseSound> getTicks() { return this.ticks; }
 
     @Override
     public boolean equals(Object o) {
